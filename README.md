@@ -10,6 +10,10 @@
 
 </div>
 
+> **Fork.** This branch is [L2ncE/pi-recap](https://github.com/L2ncE/pi-recap) at `7642dfb` with three changes:
+> the recap renders as a tool-style block, it starts from the first turn, and settings and content blocks are
+> parsed with types. Install it with `pi install git:github.com/y0usaf/pi-recap`.
+
 ## What Is This
 
 pi-recap shows a single status line above the status bar that answers
