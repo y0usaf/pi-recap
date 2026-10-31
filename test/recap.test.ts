@@ -74,8 +74,6 @@ test("limitWords truncates with ellipsis", () => {
 test("similarity is symmetric Jaccard overlap", () => {
 	assert.equal(similarity("a b c", "a b c"), 1);
 	assert.equal(similarity("a b c", "x y z"), 0);
-	// Subset: 2 of 3 words overlap → 2/3, below the 0.7 gate, so a recap that
-	// drops content is not suppressed.
 	assert.equal(similarity("a b", "a b c"), 2 / 3);
 	assert.equal(similarity("", "a b"), 0);
 });
@@ -94,7 +92,6 @@ test("buildInputKey joins goal and last round", () => {
 
 test("wrapText wraps to width and counts wide chars", () => {
 	assert.deepEqual(wrapText("abc", 2), ["ab", "c"]);
-	// ※ (U+203B) counts as 2 columns
 	assert.deepEqual(wrapText("※abc", 3), ["※a", "bc"]);
 	assert.deepEqual(wrapText("中文", 2), ["中", "文"]);
 });

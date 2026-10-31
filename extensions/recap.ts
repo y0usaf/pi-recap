@@ -88,10 +88,6 @@ let isGenerating = false;
 let agentEndCount = 0;
 let lastAutoUpdateAt = -Infinity;
 
-// ---------------------------------------------------------------------------
-// Content helpers
-// ---------------------------------------------------------------------------
-
 function extractText(content: unknown): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -129,12 +125,12 @@ function isToolCallBlock(value: object): value is { type: string; name: string }
 
 export function cleanLine(line: string): string {
 	return line
-		.replace(/^[-•*]\s+/, "") // bullet marker + required space ("-3" stays intact)
-		.replace(/^#+\s*/, "") // markdown heading syntax
-		.replace(/^\d{1,3}[.)]\s+/, "") // ordered list marker + required space; 1-3 digits so years/decimals survive
-		.replace(/^[※*](?:\s*recap\s*[:：]|\s+)/i, "") // "※ recap:" / "※recap:" / "※ " prefix; bare "**" stays intact
+		.replace(/^[-•*]\s+/, "")
+		.replace(/^#+\s*/, "")
+		.replace(/^\d{1,3}[.)]\s+/, "")
+		.replace(/^[※*](?:\s*recap\s*[:：]|\s+)/i, "")
 		.replace(/^recap\s*[:：]\s*/i, "")
-		.replace(/^(?:here(?:'s| is| are)? (?:a |the )?recap[^:：]*[:：]\s*)/i, "") // "Here is a recap...:" preamble
+		.replace(/^(?:here(?:'s| is| are)? (?:a |the )?recap[^:：]*[:：]\s*)/i, "")
 		.replace(/\*\*/g, "")
 		.replace(/`/g, "")
 		.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
@@ -145,12 +141,10 @@ export function cleanLine(line: string): string {
 }
 
 export function cleanSingleLine(text: string, fallback = ""): string {
-	// Skip preamble lines ("Here is a recap...:") and heading-only lines
-	// ("## Recap"), take the first line that still has content after cleaning.
 	for (const part of text.split("\n")) {
 		const trimmed = part.trim();
 		if (!trimmed) continue;
-		if (/^#+\s*/.test(trimmed)) continue; // heading-only lines are not recap content
+		if (/^#+\s*/.test(trimmed)) continue;
 		const cleaned = cleanLine(trimmed);
 		if (cleaned) return cleaned;
 	}
@@ -162,10 +156,6 @@ export function limitWords(text: string, maxWords: number): string {
 	if (words.length <= maxWords) return text.trim();
 	return `${words.slice(0, maxWords).join(" ")}…`;
 }
-
-// ---------------------------------------------------------------------------
-// Session context extraction
-// ---------------------------------------------------------------------------
 
 function buildSessionContext(ctx: ExtensionContext): { goal: string | null; rounds: Round[]; userCount: number } {
 	const branch = ctx.sessionManager.getBranch();
@@ -221,8 +211,6 @@ export function similarity(a: string, b: string): number {
 	for (const word of wordsA) {
 		if (wordsB.has(word)) overlap++;
 	}
-	// Jaccard: symmetric overall similarity (a shortened recap that drops
-	// content scores lower, so it is not suppressed by the gate).
 	const union = new Set([...wordsA, ...wordsB]);
 	return overlap / union.size;
 }
@@ -255,10 +243,6 @@ function buildPrompt(goal: string, rounds: Round[], maxWords: number): string {
 
 	return sections.join("\n");
 }
-
-// ---------------------------------------------------------------------------
-// Settings
-// ---------------------------------------------------------------------------
 
 function getAgentDir(): string {
 	return process.env.PI_CODING_AGENT_DIR || join(process.env.HOME ?? "", ".pi", "agent");
@@ -319,10 +303,6 @@ function getRecapConfig(ctx: ExtensionContext): { model: string | undefined; max
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Model selection & recap generation
-// ---------------------------------------------------------------------------
-
 function splitModelRef(modelRef: string): { provider: string; modelId: string } | undefined {
 	const separator = modelRef.indexOf("/");
 	if (separator <= 0 || separator === modelRef.length - 1) return undefined;
@@ -336,8 +316,6 @@ function pickModel(ctx: ExtensionContext, configuredModel: string | undefined) {
 	if (configuredModel) {
 		const parsed = splitModelRef(configuredModel);
 		let found = parsed && ctx.modelRegistry.find(parsed.provider, parsed.modelId);
-		// Bare model id ("deepseek-v4-flash"): resolve against the current
-		// session model's provider.
 		if (!found && !parsed && ctx.model) {
 			found = ctx.modelRegistry.find(ctx.model.provider, configuredModel);
 		}
@@ -365,9 +343,6 @@ async function generateRecap(pi: ExtensionAPI, ctx: ExtensionContext, force: boo
 	const model = pickModel(ctx, config.model);
 	if (!model) return { kind: "skipped", reason: "no usable model" };
 
-	// Cooldown: only attempt an automatic update every N turns, and only
-	// count attempts that actually passed all gates above. Manual (/recap)
-	// runs bypass it.
 	if (!force) {
 		if (agentEndCount - lastAutoUpdateAt < AUTO_UPDATE_COOLDOWN_TURNS) {
 			return { kind: "skipped", reason: "cooldown" };
@@ -375,8 +350,6 @@ async function generateRecap(pi: ExtensionAPI, ctx: ExtensionContext, force: boo
 		lastAutoUpdateAt = agentEndCount;
 	}
 
-	// After compaction the branch goal may drift to the first post-compaction
-	// user message; the persisted goalPrompt is the true original session goal.
 	const effectiveGoal = goalPrompt ?? goal;
 
 	isGenerating = true;
@@ -395,8 +368,6 @@ async function generateRecap(pi: ExtensionAPI, ctx: ExtensionContext, force: boo
 			},
 			{
 				maxTokens: 256,
-				// Only honored by OpenAI-family adapters (covers deepseek et al.);
-				// other adapter families silently ignore it.
 				reasoningEffort: "minimal",
 				cacheRetention: "none",
 				signal: ctx.signal,
@@ -406,9 +377,6 @@ async function generateRecap(pi: ExtensionAPI, ctx: ExtensionContext, force: boo
 		const recap = cleanSingleLine(extractText(response.content));
 		if (!recap) return { kind: "skipped", reason: "empty model output" };
 
-		// Similarity gate: if the freshly generated recap says essentially
-		// the same thing as the displayed one, keep the displayed text so
-		// the line stays visually stable across similar turns.
 		if (currentRecap && !force && similarity(currentRecap, recap) >= SIMILARITY_THRESHOLD) {
 			lastInputKey = inputKey;
 			persistState(pi, { recap: currentRecap, goal: effectiveGoal, inputKey });
@@ -428,10 +396,6 @@ async function generateRecap(pi: ExtensionAPI, ctx: ExtensionContext, force: boo
 	}
 }
 
-// ---------------------------------------------------------------------------
-// UI & persistence
-// ---------------------------------------------------------------------------
-
 export function isWideChar(ch: string): boolean {
 	const code = ch.codePointAt(0) ?? 0;
 	return (
@@ -442,7 +406,7 @@ export function isWideChar(ch: string): boolean {
 		(code >= 0xfe30 && code <= 0xfe4f) ||
 		(code >= 0xff00 && code <= 0xff60) ||
 		(code >= 0xffe0 && code <= 0xffe6) ||
-		code === 0x203b // ※ (full-width reference mark in CJK terminals)
+		code === 0x203b
 	);
 }
 
@@ -476,8 +440,6 @@ let widgetTui: { requestRender(): void } | null = null;
 
 function registerWidget(ctx: ExtensionContext, placement: "aboveEditor" | "belowEditor"): void {
 	if (widgetRegistered) {
-		// Placement changed mid-session (settings edit without reload):
-		// re-register under the new placement.
 		if (widgetPlacement !== placement) {
 			ctx.ui.setWidget(WIDGET_KEY, undefined, { placement: widgetPlacement ?? placement });
 			widgetRegistered = false;
@@ -496,7 +458,7 @@ function registerWidget(ctx: ExtensionContext, placement: "aboveEditor" | "below
 				render(width: number): string[] {
 					if (!currentRecap) return [];
 					const label = "recap";
-					const inner = Math.max(12, width - 2); // Box paddingX=1
+					const inner = Math.max(12, width - 2);
 					const lines = wrapText(`${label} — ${currentRecap}`, inner);
 					const bg = "toolSuccessBg";
 					const blank = theme.bg(bg, " ".repeat(width));
@@ -540,7 +502,6 @@ function getStoredState(ctx: ExtensionContext): SessionState {
 		const entry = branch[i];
 		if (entry.type !== "custom" || entry.customType !== STATE_KEY) continue;
 		// SAFETY: persistState is the sole writer of custom entry STATE_KEY and
-		// always stores a SessionState payload, so the data field is SessionState.
 		return (entry as CustomEntry<SessionState>).data ?? {};
 	}
 	return {};
@@ -556,19 +517,12 @@ function reportError(area: string, error: unknown): void {
 	console.warn(`[pi-recap] ${area} failed: ${message}`);
 }
 
-// ---------------------------------------------------------------------------
-// Extension entry point
-// ---------------------------------------------------------------------------
-
 export default function (pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		const state = getStoredState(ctx);
 		currentRecap = state.recap ?? null;
 		goalPrompt = state.goal ?? null;
 		lastInputKey = state.inputKey ?? null;
-		// Module-scoped state is per-session: reset everything so cooldown,
-		// turn counting, and widget registration do not leak across
-		// new/resume/fork sessions.
 		agentEndCount = 0;
 		lastAutoUpdateAt = -Infinity;
 		widgetRegistered = false;
